@@ -1,6 +1,15 @@
-# Runner-monitor
+# Runner Monitor
 
-Runner-monitor monitors self-hosted runners.
+Runner Monitor checks organization self-hosted GitHub Actions runner availability from a GitHub-hosted runner and sends Slack alerts when configured runners stay unavailable for two consecutive checks.
+
+## Operation
+
+- The scheduled workflow runs on `ubuntu-latest`.
+- Target organizations, runner lists, runner API tokens, and Slack webhook URL are passed as Actions secrets.
+- Runner status is read through organization self-hosted runner APIs.
+- Notification state is stored in the repository variable `RUNNER_MONITOR_STATE`, which is managed by the workflow.
+- The workflow uses `RUNNER_MONITOR_STATE_TOKEN` to create and update `RUNNER_MONITOR_STATE`; it does not request `contents: write`.
+- Logs intentionally print only summary counts, not runner names or raw API responses.
 
 ## License
 
