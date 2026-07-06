@@ -1,0 +1,35 @@
+name: Runner Monitor
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Check self-hosted runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check runner availability
+        env:
+          RUNNER_MONITOR_STATE_TOKEN: ${{ secrets.RUNNER_MONITOR_STATE_TOKEN }}
+          ORG_1: ${{ secrets.ORG_1 }}
+          ORG_1_RUNNERS: ${{ secrets.ORG_1_RUNNERS }}
+          ORG_1_RUNNER_READ_TOKEN: ${{ secrets.ORG_1_RUNNER_READ_TOKEN }}
+          ORG_2: ${{ secrets.ORG_2 }}
+          ORG_2_RUNNERS: ${{ secrets.ORG_2_RUNNERS }}
+          ORG_2_RUNNER_READ_TOKEN: ${{ secrets.ORG_2_RUNNER_READ_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python3 scripts/runner_monitor.py
