@@ -25,6 +25,7 @@ class FakeGitHubClient:
         self.variables = dict(variables or {})
         self.runners = dict(runners or {})
         self.saved_state = state
+        self.upsert_calls = []
         if state is not None:
             self.variables[MONITOR.STATE_VARIABLE] = state
 
@@ -32,6 +33,7 @@ class FakeGitHubClient:
         return self.variables.get(name)
 
     def upsert_repo_variable(self, name, value):
+        self.upsert_calls.append((name, value))
         self.variables[name] = value
         if name == MONITOR.STATE_VARIABLE:
             self.saved_state = value
@@ -196,6 +198,37 @@ class RunnerMonitorTests(unittest.TestCase):
         self.assertIn("recovered", slack.messages[0])
         self.assertNotIn("runner1", output)
 
+    def test_dry_run_skips_slack_alerts_and_state_update(self):
+        tid = MONITOR.target_id("org-alpha", "runner1")
+        state = (
+            '{"version":1,"targets":{'
+            f'"{tid}":{{"last_status":"offline","consecutive_failures":1,"last_notified_status":"none"}}'
+            "}}"
+        )
+        env = default_env()
+        env["RUNNER_MONITOR_DRY_RUN"] = "true"
+        client = FakeGitHubClient(
+            variables={},
+            state=state,
+            runners={
+                "org-alpha": [
+                    {"name": "runner1", "status": "offline"},
+                    {"name": "runner2", "status": "online"},
+                ],
+                "org-beta": [{"name": "runner3", "status": "online"}],
+            },
+        )
+        slack = FakeSlackClient()
+
+        result, output = self.run_monitor(env, client, slack)
+
+        self.assertEqual(result, 1)
+        self.assertIn("alerts=1", output)
+        self.assertIn("dry run", output)
+        self.assertEqual(slack.messages, [])
+        self.assertEqual(client.upsert_calls, [])
+        self.assertEqual(client.saved_state, state)
+
     def test_missing_runner_counts_as_unavailable(self):
         client = FakeGitHubClient(
             variables={},
@@ -284,6 +317,17 @@ class RunnerMonitorTests(unittest.TestCase):
             "RUNNER_MONITOR_STATE_TOKEN secret is required",
         ):
             MONITOR.load_state_token(env)
+
+    def test_slack_webhook_is_optional_for_dry_run_only(self):
+        env = default_env()
+        del env["SLACK_WEBHOOK_URL"]
+
+        self.assertEqual(MONITOR.load_slack_webhook_url(env, True), "")
+        with self.assertRaisesRegex(
+            MONITOR.ConfigError,
+            "SLACK_WEBHOOK_URL secret is required",
+        ):
+            MONITOR.load_slack_webhook_url(env, False)
 
 
 if __name__ == "__main__":
