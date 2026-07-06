@@ -212,7 +212,10 @@ def load_runner_names(env: dict[str, str], name: str) -> list[str]:
     return parse_runner_names(raw, name)
 
 
-def load_state_token(env: dict[str, str]) -> str:
+def load_state_token(env: dict[str, str], dry_run: bool = False) -> str:
+    if dry_run:
+        return ""
+
     token = env.get("RUNNER_MONITOR_STATE_TOKEN", "").strip()
     if not token:
         raise ConfigError("RUNNER_MONITOR_STATE_TOKEN secret is required")
@@ -353,7 +356,7 @@ def run(
         dry_run = load_dry_run(env)
 
     targets = load_targets(env, client)
-    state = load_state(client)
+    state = {"version": 1, "targets": {}} if dry_run else load_state(client)
     checks = collect_checks(targets, state, client)
     alerts, next_state = build_alerts(checks, state)
     next_state["updated_at"] = timestamp
@@ -391,7 +394,7 @@ def main() -> int:
         dry_run = load_dry_run(env)
         webhook_url = load_slack_webhook_url(env, dry_run)
 
-        client = GitHubClient(env.get("GITHUB_REPOSITORY", ""), load_state_token(env))
+        client = GitHubClient(env.get("GITHUB_REPOSITORY", ""), load_state_token(env, dry_run))
         return run(env, client, SlackClient(webhook_url), checked_at(), dry_run=dry_run)
     except ConfigError as err:
         print(f"configuration error: {err}", file=sys.stderr)
