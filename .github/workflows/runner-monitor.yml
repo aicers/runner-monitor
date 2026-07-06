@@ -1,8 +1,15 @@
 name: Runner Monitor
 
 on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Check runner availability without sending Slack alerts or updating state"
+        required: false
+        default: true
+        type: boolean
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "3-59/10 * * * *"
 
 permissions:
   contents: read
@@ -31,5 +38,6 @@ jobs:
           ORG_2: ${{ secrets.ORG_2 }}
           ORG_2_RUNNERS: ${{ secrets.ORG_2_RUNNERS }}
           ORG_2_RUNNER_READ_TOKEN: ${{ secrets.ORG_2_RUNNER_READ_TOKEN }}
+          RUNNER_MONITOR_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python3 scripts/runner_monitor.py

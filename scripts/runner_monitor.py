@@ -212,11 +212,26 @@ def load_runner_names(env: dict[str, str], name: str) -> list[str]:
     return parse_runner_names(raw, name)
 
 
-def load_state_token(env: dict[str, str]) -> str:
+def load_state_token(env: dict[str, str], dry_run: bool = False) -> str:
+    if dry_run:
+        return ""
+
     token = env.get("RUNNER_MONITOR_STATE_TOKEN", "").strip()
     if not token:
         raise ConfigError("RUNNER_MONITOR_STATE_TOKEN secret is required")
     return token
+
+
+def load_dry_run(env: dict[str, str]) -> bool:
+    value = env.get("RUNNER_MONITOR_DRY_RUN", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def load_slack_webhook_url(env: dict[str, str], dry_run: bool) -> str:
+    webhook_url = env.get("SLACK_WEBHOOK_URL", "").strip()
+    if not webhook_url and not dry_run:
+        raise ConfigError("SLACK_WEBHOOK_URL secret is required")
+    return webhook_url
 
 
 def load_targets(env: dict[str, str], client: GitHubClient) -> list[Target]:
@@ -329,9 +344,19 @@ def build_alerts(checks: list[Check], state: dict) -> tuple[list[Alert], dict]:
     return alerts, {"version": 1, "targets": next_targets}
 
 
-def run(env: dict[str, str], client: GitHubClient, slack: SlackClient, timestamp: str) -> int:
+def run(
+    env: dict[str, str],
+    client: GitHubClient,
+    slack: SlackClient,
+    timestamp: str,
+    *,
+    dry_run: bool | None = None,
+) -> int:
+    if dry_run is None:
+        dry_run = load_dry_run(env)
+
     targets = load_targets(env, client)
-    state = load_state(client)
+    state = {"version": 1, "targets": {}} if dry_run else load_state(client)
     checks = collect_checks(targets, state, client)
     alerts, next_state = build_alerts(checks, state)
     next_state["updated_at"] = timestamp
@@ -351,6 +376,10 @@ def run(env: dict[str, str], client: GitHubClient, slack: SlackClient, timestamp
         f"alerts={len(alerts)}"
     )
 
+    if dry_run:
+        print("runner monitor dry run: skipped slack alerts and state update")
+        return 1 if failed else 0
+
     if alerts:
         slack.send(alerts, timestamp)
         print(f"runner monitor sent slack alerts: alerts={len(alerts)}")
@@ -362,12 +391,11 @@ def run(env: dict[str, str], client: GitHubClient, slack: SlackClient, timestamp
 def main() -> int:
     env = os.environ
     try:
-        webhook_url = env.get("SLACK_WEBHOOK_URL", "").strip()
-        if not webhook_url:
-            raise ConfigError("SLACK_WEBHOOK_URL secret is required")
+        dry_run = load_dry_run(env)
+        webhook_url = load_slack_webhook_url(env, dry_run)
 
-        client = GitHubClient(env.get("GITHUB_REPOSITORY", ""), load_state_token(env))
-        return run(env, client, SlackClient(webhook_url), checked_at())
+        client = GitHubClient(env.get("GITHUB_REPOSITORY", ""), load_state_token(env, dry_run))
+        return run(env, client, SlackClient(webhook_url), checked_at(), dry_run=dry_run)
     except ConfigError as err:
         print(f"configuration error: {err}", file=sys.stderr)
         return 2
