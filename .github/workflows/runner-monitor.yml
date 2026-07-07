@@ -9,7 +9,11 @@ on:
         default: true
         type: boolean
   schedule:
-    - cron: "3,13,23,33,43,53 * * * *"
+    # Times are UTC; KST = UTC+9. GitHub Actions cron only supports UTC.
+    # Daytime KST 08:00-19:59 (UTC 23:00 + 00:00-10:59): run at :07 and :37
+    - cron: "7,37 0-10,23 * * *"
+    # Nighttime KST 20:00-07:59 (UTC 11:00-22:59): run at :07, :27, and :47
+    - cron: "7,27,47 11-22 * * *"
 
 permissions:
   contents: read
